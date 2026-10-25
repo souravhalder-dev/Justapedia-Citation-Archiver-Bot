@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FC } from "react";
-import { Play, Pause, Square, Zap, Activity, Clock, ShieldAlert } from "lucide-react";
+import { Play, Pause, Square, Zap, Activity, Clock, ShieldCheck, ShieldAlert } from "lucide-react";
 import type { AutoModeStatus, UserSession } from "../types";
-import { LinkJustapediaModal } from "./LinkJustapediaModal";
 
 interface AutoModePanelProps {
   user: UserSession;
@@ -11,25 +10,9 @@ interface AutoModePanelProps {
 export const AutoModePanel: FC<AutoModePanelProps> = ({ user }) => {
   const [status, setStatus] = useState<AutoModeStatus | null>(null);
   const [category, setCategory] = useState<string>("Living people");
-  const [dryRun, setDryRun] = useState<boolean>(true); // default to safe Dry Run
+  const [dryRun, setDryRun] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
-  const [wikiStatus, setWikiStatus] = useState<{ is_linked: boolean; username?: string } | null>(null);
-  const [isLinkModalOpen, setIsLinkModalOpen] = useState<boolean>(false);
   const [startError, setStartError] = useState<string | null>(null);
-
-  const fetchWikiStatus = async () => {
-    try {
-      const res = await fetch("/api/auth/wiki-status", {
-        headers: { Authorization: `Bearer ${user.token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setWikiStatus(data);
-      }
-    } catch {
-      // ignore
-    }
-  };
 
   const fetchStatus = async () => {
     try {
@@ -45,19 +28,12 @@ export const AutoModePanel: FC<AutoModePanelProps> = ({ user }) => {
 
   useEffect(() => {
     fetchStatus();
-    fetchWikiStatus();
     const interval = setInterval(fetchStatus, 1000);
     return () => clearInterval(interval);
   }, []);
 
   const handleStart = async () => {
     setStartError(null);
-    if (!dryRun && !wikiStatus?.is_linked) {
-      setStartError("Live Edit mode requires linking your Justapedia account (OAuth or Session Cookie) to bypass the firewall.");
-      setIsLinkModalOpen(true);
-      return;
-    }
-
     setLoading(true);
     try {
       const res = await fetch("/api/auto/start", {
@@ -76,9 +52,6 @@ export const AutoModePanel: FC<AutoModePanelProps> = ({ user }) => {
           errData = {};
         }
         setStartError(errData.detail || errData.error || `Server error starting Auto Mode (${res.status})`);
-        if (errData.detail && errData.detail.includes("authenticated Justapedia session")) {
-          setIsLinkModalOpen(true);
-        }
       } else {
         setStartError(null);
       }
@@ -212,69 +185,25 @@ export const AutoModePanel: FC<AutoModePanelProps> = ({ user }) => {
           </div>
         )}
 
-        {!dryRun && !wikiStatus?.is_linked && (
-          <div
-            style={{
-              padding: "0.85rem 1rem",
-              background: "rgba(245, 158, 11, 0.12)",
-              border: "1px solid rgba(245, 158, 11, 0.4)",
-              borderRadius: "8px",
-              marginBottom: "1.25rem",
-              fontSize: "0.85rem",
-              color: "#fde68a",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "0.75rem",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <ShieldAlert size={18} color="#fbbf24" />
-              <span>
-                <strong>Live Edit Challenge Warning:</strong> Justapedia requires authentication to edit live. Connect your account to bypass the firewall (HTTP 429), or run in Dry Run mode to preview edits.
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button
-                className="btn btn-secondary"
-                onClick={() => setDryRun(true)}
-                style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}
-              >
-                Switch to Dry Run (Safe)
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => setIsLinkModalOpen(true)}
-                style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem", background: "#f59e0b", borderColor: "#f59e0b" }}
-              >
-                Connect Justapedia Account
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!dryRun && wikiStatus?.is_linked && (
-          <div
-            style={{
-              padding: "0.75rem 1rem",
-              background: "rgba(34, 197, 94, 0.12)",
-              border: "1px solid rgba(34, 197, 94, 0.3)",
-              borderRadius: "8px",
-              marginBottom: "1.25rem",
-              fontSize: "0.85rem",
-              color: "#86efac",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-            }}
-          >
-            <ShieldAlert size={18} color="#4ade80" />
-            <span>
-              <strong>Authenticated Live Mode:</strong> All edits will be written directly to Justapedia under <strong>{wikiStatus.username || user.username}</strong>.
-            </span>
-          </div>
-        )}
+        <div
+          style={{
+            padding: "0.75rem 1rem",
+            background: "rgba(56, 189, 248, 0.08)",
+            border: "1px solid rgba(56, 189, 248, 0.25)",
+            borderRadius: "8px",
+            marginBottom: "1.25rem",
+            fontSize: "0.85rem",
+            color: "#93c5fd",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+          }}
+        >
+          <ShieldCheck size={18} color="#38bdf8" />
+          <span>
+            <strong>Active Operator:</strong> All citation enhancements will be attributed to <strong>{user.username}</strong> on Justapedia.
+          </span>
+        </div>
 
         {/* Controls Bar */}
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
@@ -432,16 +361,6 @@ export const AutoModePanel: FC<AutoModePanelProps> = ({ user }) => {
           </div>
         </div>
       </div>
-
-      <LinkJustapediaModal
-        user={user}
-        isOpen={isLinkModalOpen}
-        onClose={() => setIsLinkModalOpen(false)}
-        onSuccess={() => {
-          fetchWikiStatus();
-          setStartError(null);
-        }}
-      />
     </div>
   );
 };

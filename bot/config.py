@@ -56,7 +56,7 @@ class BotConfig(BaseSettings):
     url_check_timeout: int = int(os.getenv("BOT_URL_CHECK_TIMEOUT", "2"))
     max_retries: int = int(os.getenv("BOT_MAX_RETRIES", "2"))
     backoff_factor: float = float(os.getenv("BOT_BACKOFF_FACTOR", "0.3"))
-    edit_rate_limit: float = float(os.getenv("BOT_EDIT_RATE_LIMIT", "0.05"))  # Seconds between edits
+    edit_rate_limit: float = float(os.getenv("BOT_EDIT_RATE_LIMIT", "1.5"))  # Safe pacing between live edits
     url_check_rate_limit: float = float(os.getenv("BOT_URL_CHECK_RATE_LIMIT", "0.0"))
     parallel_workers: int = int(os.getenv("BOT_PARALLEL_WORKERS", "20"))
 

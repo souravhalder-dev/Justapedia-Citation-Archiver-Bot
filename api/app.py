@@ -433,17 +433,6 @@ def start_auto_mode(req: AutoModeStartRequest, request: Request) -> Dict[str, An
     )
     user_client = get_user_wiki_client(session)
 
-    cookies = session.get("cookies", {})
-    has_wiki_auth = bool(
-        cookies.get("oauth_access_token")
-        or any(k.startswith("justapedia_") for k in cookies.keys())
-    )
-    if not req.dry_run and not has_wiki_auth:
-        raise HTTPException(
-            status_code=400,
-            detail="Live Edit mode requires an authenticated Justapedia session (OAuth or Session Cookie) to bypass firewall restrictions and attribute edits to your MediaWiki account. Please connect your Justapedia account using the 'Connect Justapedia' button in the header, or enable Dry Run mode to preview edits without live saving.",
-        )
-
     started = auto_controller.start(
         username=session["username"],
         user_client=user_client,
