@@ -19,6 +19,7 @@ class BotConfig(BaseSettings):
     wiki_base_url: str = os.getenv("JUSTAPEDIA_BASE_URL", "https://justapedia.org")
     bot_username: str = os.getenv("JUSTAPEDIA_BOT_USERNAME", "")
     bot_password: str = os.getenv("JUSTAPEDIA_BOT_PASSWORD", "")
+    session_cookie: str = os.getenv("JUSTAPEDIA_SESSION_COOKIE", "")
     edit_summary: str = os.getenv(
         "JUSTAPEDIA_EDIT_SUMMARY",
         "Bot: Added Wayback Machine archive information to citations",

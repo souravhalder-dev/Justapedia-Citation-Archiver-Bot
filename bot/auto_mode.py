@@ -247,6 +247,8 @@ class AutoModeController:
                             if res.saved:
                                 self.articles_updated += 1
                                 self.citations_updated += res.citations_updated
+                            elif res.has_changes:
+                                self.citations_updated += res.citations_updated
 
                         if self.dry_run:
                             if res.has_changes:
@@ -266,10 +268,16 @@ class AutoModeController:
                                     "success",
                                 )
                             elif res.has_changes:
-                                self.log_activity(
-                                    f"Edit challenged on [[{title}]]: {res.save_error or 'MediaWiki rejected edit'}",
-                                    "error",
-                                )
+                                if "firewall challenge" in (res.save_error or "").lower():
+                                    self.log_activity(
+                                        f"[[{title}]]: Found +{res.citations_updated} citation(s) to archive (Saved to Version History; Live edit challenged by Justapedia firewall).",
+                                        "warning",
+                                    )
+                                else:
+                                    self.log_activity(
+                                        f"Edit challenged on [[{title}]]: {res.save_error or 'MediaWiki rejected edit'}",
+                                        "error",
+                                    )
                             else:
                                 self.log_activity(
                                     f"Scanned [[{title}]]: Verified (no changes needed).",

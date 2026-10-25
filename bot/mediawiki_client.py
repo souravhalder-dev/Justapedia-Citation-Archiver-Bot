@@ -114,6 +114,12 @@ class MediaWikiClient:
                 and str(k) not in ("auth_type", "username", "user_id", "created_at", "expires_at")
                 and isinstance(v, (str, int, float))
             }
+            if not clean_cookies and config.session_cookie:
+                for part in config.session_cookie.split(";"):
+                    if "=" in part:
+                        ck, cv = part.strip().split("=", 1)
+                        clean_cookies[ck.strip()] = cv.strip()
+
             if clean_cookies:
                 self.session.cookies.update(clean_cookies)
             self.is_logged_in = bool(self.username or clean_cookies)
