@@ -171,11 +171,18 @@ class Database:
                     password_hash TEXT NOT NULL,
                     salt TEXT NOT NULL,
                     justapedia_user_id INTEGER DEFAULT 1,
+                    justapedia_credentials_json TEXT DEFAULT '{}',
                     created_at TEXT NOT NULL,
                     last_login TEXT
                 )
                 """
             )
+            # Migration check for existing databases
+            try:
+                conn.execute("ALTER TABLE app_users ADD COLUMN justapedia_credentials_json TEXT DEFAULT '{}'")
+            except Exception:
+                pass
+
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_users_username ON app_users(username)"
             )
@@ -514,6 +521,16 @@ class Database:
             conn.execute("DELETE FROM user_sessions WHERE token = ?", (token,))
             conn.commit()
 
+    def update_session_cookies(self, token: str, cookies: Dict[str, Any]) -> None:
+        """Update session cookies payload."""
+        import json
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE user_sessions SET cookies_json = ? WHERE token = ?",
+                (json.dumps(cookies or {}), token),
+            )
+            conn.commit()
+
     # ------------------ User Authentication & Management ------------------
 
     def create_or_update_user(
@@ -537,14 +554,32 @@ class Database:
             conn.commit()
             return self.get_user(username.strip())  # type: ignore
 
+    def save_user_justapedia_credentials(self, username: str, credentials: Dict[str, Any]) -> None:
+        """Persist user's verified Justapedia OAuth or session cookies."""
+        import json
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE app_users SET justapedia_credentials_json = ? WHERE username = ?",
+                (json.dumps(credentials or {}), username.strip()),
+            )
+            conn.commit()
+
     def get_user(self, username: str) -> Optional[Dict[str, Any]]:
         """Fetch user record by username."""
+        import json
         with self._get_connection() as conn:
             row = conn.execute(
-                "SELECT id, username, password_hash, salt, justapedia_user_id, created_at, last_login FROM app_users WHERE username = ?",
+                "SELECT id, username, password_hash, salt, justapedia_user_id, justapedia_credentials_json, created_at, last_login FROM app_users WHERE username = ?",
                 (username.strip(),),
             ).fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            data = dict(row)
+            try:
+                data["justapedia_credentials"] = json.loads(data.get("justapedia_credentials_json") or "{}")
+            except Exception:
+                data["justapedia_credentials"] = {}
+            return data
 
     def authenticate_user(self, username: str, password: str) -> Optional[Dict[str, Any]]:
         """

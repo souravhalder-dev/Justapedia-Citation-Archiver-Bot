@@ -56,6 +56,15 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class LinkCookieRequest(BaseModel):
+    cookie: str
+
+
+class LinkOAuthRequest(BaseModel):
+    oauth_token: str
+    oauth_verifier: str
+
+
 class OAuthCallbackRequest(BaseModel):
     oauth_token: str
     oauth_verifier: str
@@ -212,6 +221,11 @@ def login(req: LoginRequest) -> Dict[str, Any]:
         "user_id": user.get("justapedia_user_id", 1),
     }
 
+    # Automatically restore linked Justapedia OAuth/cookie credentials if previously saved
+    saved_creds = user.get("justapedia_credentials") or {}
+    if saved_creds:
+        session_payload.update(saved_creds)
+
     db.create_session(
         token=token,
         username=user["username"],
@@ -227,6 +241,116 @@ def login(req: LoginRequest) -> Dict[str, Any]:
         "username": user["username"],
         "user_id": user.get("justapedia_user_id", 1),
         "message": f"Welcome back, {user['username']}! Logged in successfully.",
+    }
+
+
+@app.get("/api/auth/wiki-status")
+def get_wiki_status(request: Request) -> Dict[str, Any]:
+    """Check if current session has active, verified Justapedia credentials."""
+    session = get_current_user_session(
+        request.headers.get("Authorization"), request.headers.get("x-session-token")
+    )
+    user_client = get_user_wiki_client(session)
+    cookies = session.get("cookies", {})
+    auth_type = cookies.get("auth_type", "credentials")
+
+    try:
+        res = user_client._http_client().get(
+            user_client.api_url,
+            params={
+                "action": "query",
+                "meta": "userinfo",
+                "uiprop": "rights|groups",
+                "format": "json",
+            },
+            timeout=5,
+        )
+        data = user_client._safe_json(res)
+        uinfo = data.get("query", {}).get("userinfo", {})
+        uid = uinfo.get("id", 0)
+        uname = uinfo.get("name")
+        is_anon = uinfo.get("anon") is not None or uid == 0
+        groups = uinfo.get("groups", [])
+
+        is_linked = not is_anon and bool(uname)
+        return {
+            "is_linked": is_linked,
+            "username": uname if is_linked else None,
+            "user_id": uid if is_linked else None,
+            "groups": groups,
+            "auth_type": auth_type if is_linked else "none",
+        }
+    except Exception as e:
+        return {
+            "is_linked": False,
+            "error": str(e),
+            "auth_type": auth_type,
+        }
+
+
+@app.post("/api/auth/link-cookie")
+def link_cookie(req: LinkCookieRequest, request: Request) -> Dict[str, Any]:
+    """Link Justapedia browser session cookie to current user account."""
+    session = get_current_user_session(
+        request.headers.get("Authorization"), request.headers.get("x-session-token")
+    )
+    test_client = MediaWikiClient()
+    success, msg, cookies, user_id, username = test_client.login_with_cookie(req.cookie)
+    if not success or not cookies:
+        raise HTTPException(status_code=400, detail=msg)
+
+    payload = {
+        "auth_type": "cookie",
+        "username": username or session["username"],
+        "user_id": user_id,
+        **cookies,
+    }
+    db.update_session_cookies(session["token"], payload)
+    db.save_user_justapedia_credentials(session["username"], payload)
+    logger.info(f"User '{session['username']}' successfully linked Justapedia account as {username} (ID: {user_id}).")
+    return {
+        "success": True,
+        "message": f"Justapedia account linked as {username} (ID: {user_id})!",
+        "username": username,
+        "user_id": user_id,
+    }
+
+
+@app.post("/api/auth/link-oauth")
+def link_oauth(req: LinkOAuthRequest, request: Request) -> Dict[str, Any]:
+    """Complete OAuth 1.0a verification and link token to current user account."""
+    session = get_current_user_session(
+        request.headers.get("Authorization"), request.headers.get("x-session-token")
+    )
+    secret = db.get_pending_oauth_secret(req.oauth_token)
+    if not secret:
+        raise HTTPException(
+            status_code=400,
+            detail="OAuth session expired or invalid request token. Please restart authorization.",
+        )
+
+    success, msg, payload, user_id, username = MediaWikiClient.complete_oauth(
+        req_token=req.oauth_token,
+        req_secret=secret,
+        verifier=req.oauth_verifier,
+    )
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+
+    merged = {
+        "auth_type": "oauth",
+        "username": username or session["username"],
+        "user_id": user_id,
+        **payload,
+    }
+    db.update_session_cookies(session["token"], merged)
+    db.save_user_justapedia_credentials(session["username"], merged)
+    logger.info(f"User '{session['username']}' successfully linked Justapedia account via OAuth as {username}.")
+    return {
+        "success": True,
+        "message": f"Justapedia OAuth successfully connected as {username}!",
+        "username": username,
+        "user_id": user_id,
     }
 
 
@@ -308,6 +432,17 @@ def start_auto_mode(req: AutoModeStartRequest, request: Request) -> Dict[str, An
         request.headers.get("Authorization"), request.headers.get("x-session-token")
     )
     user_client = get_user_wiki_client(session)
+
+    cookies = session.get("cookies", {})
+    has_wiki_auth = bool(
+        cookies.get("oauth_access_token")
+        or any(k.startswith("justapedia_") for k in cookies.keys())
+    )
+    if not req.dry_run and not has_wiki_auth:
+        raise HTTPException(
+            status_code=400,
+            detail="Live Edit mode requires an authenticated Justapedia session (OAuth or Session Cookie) to bypass firewall restrictions and attribute edits to your MediaWiki account. Please connect your Justapedia account using the 'Connect Justapedia' button in the header, or enable Dry Run mode to preview edits without live saving.",
+        )
 
     started = auto_controller.start(
         username=session["username"],
