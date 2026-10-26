@@ -10,8 +10,7 @@ It scans Justapedia articles, inspects citations with missing archive parameters
 
 - **Developer**: Sourav Halder
 - **Email**: skhsouravhalder@gmail.com
-- **Justapedia OAuth Consumer Token**: `9b12e5b4377613f6b46d14f8a6c77798`
-- **Secret Token**: `0fb2bbb28cd108462f367149b56ab1748e460251`
+
 
 ---
 
